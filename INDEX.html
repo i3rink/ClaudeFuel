@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Fuel Gauge</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #111214;
+    --panel: #18191d;
+    --border: #2a2b30;
+    --text: #e4e5ea;
+    --muted: #5c5e6e;
+    --full: #22c55e;
+    --ok: #84cc16;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --critical: #dc2626;
+    --accent: #6366f1;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    grid-template-rows: 60px 1fr 80px;
+    grid-template-areas:
+      "gauge-header chat-header"
+      "gauge        chat"
+      "gauge-footer input";
+  }
+
+  .gauge-header {
+    grid-area: gauge-header;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+  }
+  .gauge-header h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 0.05em;
+  }
+  .gauge-header h1 span { color: #6366f1; }
+
+  .gauge-panel {
+    grid-area: gauge;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 20px;
+    gap: 22px;
+    overflow-y: auto;
+  }
+
+  .gauge-footer {
+    grid-area: gauge-footer;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .model-select-wrap { width: 100%; }
+  .model-select-wrap label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 6px;
+  }
+  #model-select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    padding: 8px 10px;
+    border-radius: 6px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235c5e6e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  #model-select:focus { border-color: var(--accent); }
+
+  /* ── TANK ── */
+  .tank-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .tank-cap {
+    width: 38px;
+    height: 10px;
+    background: #2e2f36;
+    border-radius: 4px 4px 0 0;
+    border: 1px solid #3a3b44;
+    border-bottom: none;
+  }
+  .tank-outer {
+    width: 84px;
+    height: 230px;
+    border: 2px solid var(--border);
+    border-radius: 10px 10px 6px 6px;
+    position: relative;
+    background: var(--bg);
+    overflow: hidden;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  /* Tick lines */
+  .tank-outer::before {
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 12px;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent calc(25% - 1px),
+      var(--border) calc(25% - 1px),
+      var(--border) 25%
+    );
+    z-index: 3;
+  }
+  .tank-fill {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    transition: height 0.9s cubic-bezier(0.34, 1.2, 0.64, 1), background 0.8s ease;
+    border-radius: 0 0 4px 4px;
+    z-index: 1;
+  }
+  /* Liquid shimmer on top of fill */
+  .tank-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 8px;
+    background: rgba(255,255,255,0.18);
+    border-radius: 3px;
+    animation: shimmer 2.5s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%, 100% { opacity: 0.25; }
+    50% { opacity: 0.9; }
+  }
+  /* Liquid wobble line */
+  .tank-fill::before {
+    content: '';
+    position: absolute;
+    top: -3px; left: 0; right: 0;
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+    animation: wobble 3s ease-in-out infinite;
+  }
+  @keyframes wobble {
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(1.05); }
+  }
+
+  .ef-row {
+    display: flex;
+    justify-content: space-between;
+    width: 84px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.1rem;
+    color: var(--muted);
+    padding: 0 6px;
+  }
+
+  .pct-display {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 4rem;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    transition: color 0.8s;
+  }
+  .status-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    transition: color 0.8s;
+  }
+
+  /* Warning */
+  #warning-box {
+    width: 100%;
+    border-radius: 8px;
+    padding: 13px 14px;
+    font-size: 0.73rem;
+    line-height: 1.5;
+    display: none;
+  }
+  #warning-box.warn {
+    display: block;
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.35);
+    color: #fbbf24;
+    animation: pulse-warn 2.5s ease-in-out infinite;
+  }
+  #warning-box.danger {
+    display: block;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.5);
+    color: #f87171;
+    animation: pulse-warn 1s ease-in-out infinite;
+  }
+  @keyframes pulse-warn {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.65; }
+  }
+  #warning-box .warn-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 5px;
+  }
+
+  /* Token readout */
+  .token-readout {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .token-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+  }
+  .token-row .lbl { color: var(--muted); }
+  .token-row .val { font-weight: 600; }
+  .token-row.div { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 2px; }
+
+  /* Progress bar under readout */
+  .ctx-bar-wrap { width: 100%; }
+  .ctx-bar-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  .ctx-bar-outer {
+    width: 100%;
+    height: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .ctx-bar-inner {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.9s ease, background 0.8s ease;
+  }
+
+  /* ── CHAT ── */
+  .chat-header {
+    grid-area: chat-header;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    gap: 12px;
+  }
+  .api-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    padding: 7px 12px;
+    border-radius: 6px;
+    width: 280px;
+    outline: none;
+    flex-shrink: 0;
+  }
+  .api-input:focus { border-color: var(--accent); }
+  .api-input::placeholder { color: var(--muted); }
+  .btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 7px 14px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--text); color: var(--text); }
+
+  #chat {
+    grid-area: chat;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    scroll-behavior: smooth;
+  }
+  .empty-state {
+    margin: auto;
+    text-align: center;
+    color: var(--muted);
+    max-width: 320px;
+  }
+  .empty-state .big { font-family: 'Bebas Neue', sans-serif; font-size: 5rem; color: var(--border); line-height: 1; margin-bottom: 12px; }
+  .empty-state p { font-size: 0.83rem; line-height: 1.7; }
+
+  .msg { display: flex; flex-direction: column; gap: 5px; max-width: 660px; }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.assistant { align-self: flex-start; align-items: flex-start; }
+  .bubble {
+    padding: 11px 16px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 2px; }
+  .msg.assistant .bubble { background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+  .msg-meta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6rem;
+    color: var(--muted);
+    display: flex;
+    gap: 7px;
+  }
+  .tag {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.58rem;
+    font-weight: 600;
+  }
+  .tag-i { background: rgba(99,102,241,0.15); color: #818cf8; }
+  .tag-o { background: rgba(34,197,94,0.15); color: #4ade80; }
+
+  #input-area {
+    grid-area: input;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  #prompt {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.88rem;
+    padding: 12px 16px;
+    border-radius: 8px;
+    resize: none;
+    outline: none;
+    min-height: 48px;
+    max-height: 120px;
+    transition: border-color 0.2s;
+  }
+  #prompt:focus { border-color: var(--accent); }
+  #prompt::placeholder { color: var(--muted); }
+  #send-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 0 22px;
+    height: 48px;
+    border-radius: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  #send-btn:hover:not(:disabled) { background: #4f46e5; }
+  #send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .typing { display: flex; gap: 5px; padding: 2px 0; }
+  .typing span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+    animation: bounce 1.2s infinite;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce {
+    0%,60%,100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-6px); opacity: 1; }
+  }
+
+  .btn-summarise {
+    border-color: rgba(99,102,241,0.4);
+    color: #818cf8;
+  }
+  .btn-summarise:hover:not(:disabled) { border-color: var(--accent); color: #a5b4fc; background: rgba(99,102,241,0.08); }
+  .btn-summarise:disabled { opacity: 0.25; cursor: not-allowed; }
+
+  /* Summary modal */
+  #summary-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  #summary-modal.open { display: flex; }
+  .modal-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 620px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-header h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.3rem;
+    letter-spacing: 0.05em;
+    color: var(--text);
+  }
+  .modal-header h2 span { color: var(--accent); }
+  .modal-close {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 20px 22px; overflow-y: auto; flex: 1; }
+  .modal-body p {
+    font-size: 0.84rem;
+    line-height: 1.75;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .modal-footer {
+    padding: 14px 22px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .modal-hint {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.62rem;
+    color: var(--muted);
+    flex: 1;
+    line-height: 1.5;
+  }
+  .btn-copy {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 9px 18px;
+    border-radius: 6px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-copy:hover { background: #4f46e5; }
+  .btn-copy.copied { background: var(--full); }
+
+  .summary-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    padding: 20px 0;
+  }
+    display: none;
+    position: fixed;
+    bottom: 90px; left: 320px; right: 20px;
+    background: rgba(239,68,68,0.12);
+    border: 1px solid rgba(239,68,68,0.4);
+    color: #f87171;
+    font-size: 0.78rem;
+    padding: 10px 16px;
+    border-radius: 6px;
+    z-index: 100;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="gauge-header">
+  <h1>CLAUDE <span>FUEL</span></h1>
+</div>
+
+<div class="chat-header">
+  <input class="api-input" type="password" id="api-key" placeholder="sk-ant-… paste your API key" />
+  <div style="display:flex;gap:8px;">
+    <button class="btn btn-summarise" id="summarise-btn" onclick="summariseChat()" disabled title="Summarise conversation so you can continue in a fresh chat">✦ Summarise</button>
+    <button class="btn" onclick="clearSession()">↺ New Tank</button>
+  </div>
+</div>
+
+<!-- GAUGE PANEL -->
+<div class="gauge-panel">
+
+  <div class="model-select-wrap">
+    <label>Model</label>
+    <select id="model-select" onchange="onModelChange()">
+      <option value="claude-sonnet-4-6" selected>claude-sonnet-4.6 · 1M ctx</option>
+      <option value="claude-opus-4-7">claude-opus-4.7 · 1M ctx</option>
+    </select>
+  </div>
+
+  <div class="tank-wrap">
+    <div class="tank-cap"></div>
+    <div class="tank-outer">
+      <div class="tank-fill" id="tank-fill"></div>
+    </div>
+    <div class="ef-row"><span>E</span><span>F</span></div>
+    <div class="pct-display" id="pct-display">100%</div>
+    <div class="status-label" id="status-label" style="color:var(--full)">FULL TANK</div>
+  </div>
+
+  <div id="warning-box"></div>
+
+  <div class="token-readout">
+    <div class="token-row">
+      <span class="lbl">Used</span>
+      <span class="val" id="r-used">0</span>
+    </div>
+    <div class="token-row">
+      <span class="lbl">Limit</span>
+      <span class="val" id="r-limit">1,000,000</span>
+    </div>
+    <div class="token-row div">
+      <span class="lbl">Remaining</span>
+      <span class="val" id="r-remaining">1,000,000</span>
+    </div>
+    <div class="token-row">
+      <span class="lbl">Turns</span>
+      <span class="val" id="r-turns">0</span>
+    </div>
+    <div class="token-row div">
+      <span class="lbl">Est. cost</span>
+      <span class="val" id="r-cost">$0.0000</span>
+    </div>
+  </div>
+
+  <div class="ctx-bar-wrap">
+    <div class="ctx-bar-label">Context used</div>
+    <div class="ctx-bar-outer">
+      <div class="ctx-bar-inner" id="ctx-bar" style="width:0%;background:var(--full)"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="gauge-footer">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Context window</div>
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;font-weight:600;" id="ctx-footer">1,000,000 tokens</div>
+</div>
+
+<!-- CHAT PANEL -->
+<div id="chat">
+  <div class="empty-state" id="empty">
+    <div class="big">⛽</div>
+    <p>Tank is full. Paste your API key, pick a model, and start chatting. The gauge drains as your context fills up.</p>
+  </div>
+</div>
+
+<div id="error-bar"></div>
+
+<div id="input-area">
+  <textarea id="prompt" placeholder="Ask something…" rows="1"></textarea>
+  <button id="send-btn" onclick="sendMessage()">Send →</button>
+</div>
+
+<!-- Summary Modal -->
+<div id="summary-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>CONVERSATION <span>SUMMARY</span></h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <div class="summary-loading">
+        <div class="typing"><span></span><span></span><span></span></div>
+        Generating summary…
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-hint">Copy this summary, start a new chat (↺ New Tank), and paste it at the top to continue with context intact.</div>
+      <button class="btn-copy" id="copy-btn" onclick="copySummary()">Copy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const MODELS = {
+    'claude-sonnet-4-6': { ctx: 1000000, warn: 0.70, danger: 0.85, inputPrice: 3.00, outputPrice: 15.00 },
+    'claude-opus-4-7':   { ctx: 1000000, warn: 0.65, danger: 0.85, inputPrice: 5.00, outputPrice: 25.00 },
+  };
+
+  const history = [];
+  let totalInput = 0, totalOutput = 0, turns = 0;
+
+  function currentModel() { return document.getElementById('model-select').value; }
+  function ctxLimit() { return MODELS[currentModel()].ctx; }
+
+  function updateGauge() {
+    const used = totalInput + totalOutput;
+    const limit = ctxLimit();
+    const usedPct = Math.min(used / limit, 1);
+    const fillPct = Math.max(0, 1 - usedPct);
+    const cfg = MODELS[currentModel()];
+
+    // Color based on depletion
+    let color;
+    if (usedPct < cfg.warn)       color = 'var(--full)';
+    else if (usedPct < cfg.danger) color = 'var(--warn)';
+    else if (usedPct < 0.95)      color = 'var(--danger)';
+    else                          color = 'var(--critical)';
+
+    // Tank fill
+    const fill = document.getElementById('tank-fill');
+    fill.style.height = Math.round(fillPct * 100) + '%';
+    fill.style.background = `linear-gradient(to top, ${color}bb, ${color}ee)`;
+
+    // Progress bar
+    const bar = document.getElementById('ctx-bar');
+    bar.style.width = Math.round(usedPct * 100) + '%';
+    bar.style.background = color;
+
+    // Percentage readout (shows how much remains)
+    const remPct = Math.max(0, Math.round(fillPct * 100));
+    const pctEl = document.getElementById('pct-display');
+    pctEl.textContent = remPct + '%';
+    pctEl.style.color = color;
+
+    // Status label
+    const labelEl = document.getElementById('status-label');
+    let label;
+    if (usedPct === 0)              label = 'FULL TANK';
+    else if (usedPct < cfg.warn)    label = 'ALL GOOD';
+    else if (usedPct < cfg.danger)  label = 'RUNNING LOW';
+    else if (usedPct < 0.95)        label = 'NEAR EMPTY';
+    else                            label = 'CRITICAL';
+    labelEl.textContent = label;
+    labelEl.style.color = color;
+
+    // Token readout
+    document.getElementById('r-used').textContent      = used.toLocaleString();
+    document.getElementById('r-limit').textContent     = limit.toLocaleString();
+    document.getElementById('r-remaining').textContent = Math.max(0, limit - used).toLocaleString();
+    document.getElementById('r-turns').textContent     = turns;
+    const cost = (totalInput * cfg.inputPrice + totalOutput * cfg.outputPrice) / 1_000_000;
+    document.getElementById('r-cost').textContent = '$' + cost.toFixed(4);
+
+    // Warning box
+    const wb = document.getElementById('warning-box');
+    if (usedPct >= cfg.danger) {
+      wb.className = 'danger';
+      wb.innerHTML = `<div class="warn-title">⚠ TANK NEARLY EMPTY</div>You've used ${Math.round(usedPct*100)}% of your context window. <strong>Summarise this conversation now</strong>, start a fresh chat, and paste the summary in to continue.`;
+    } else if (usedPct >= cfg.warn) {
+      wb.className = 'warn';
+      wb.innerHTML = `<div class="warn-title">⚡ Running Low</div>${Math.round(fillPct*100)}% remaining. Think about wrapping up or summarising soon.`;
+    } else {
+      wb.className = '';
+      wb.style.display = 'none';
+      if (!wb.className) wb.removeAttribute('style');
+    }
+  }
+
+  function onModelChange() {
+    const limit = ctxLimit();
+    document.getElementById('r-limit').textContent = limit.toLocaleString();
+    document.getElementById('ctx-footer').textContent = limit.toLocaleString() + ' tokens';
+    updateGauge();
+  }
+
+  // Chat
+  const chatEl   = document.getElementById('chat');
+  const promptEl = document.getElementById('prompt');
+  const sendBtn  = document.getElementById('send-btn');
+  const errorBar = document.getElementById('error-bar');
+  const emptyEl  = document.getElementById('empty');
+
+  promptEl.addEventListener('input', () => {
+    promptEl.style.height = 'auto';
+    promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + 'px';
+  });
+  promptEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+
+  function showError(msg) {
+    errorBar.textContent = msg;
+    errorBar.style.display = 'block';
+    setTimeout(() => errorBar.style.display = 'none', 7000);
+  }
+
+  function addBubble(role, text) {
+    emptyEl.style.display = 'none';
+    const wrap = document.createElement('div');
+    wrap.className = `msg ${role}`;
+    const bub = document.createElement('div');
+    bub.className = 'bubble';
+    bub.textContent = text;
+    wrap.appendChild(bub);
+    chatEl.appendChild(wrap);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return wrap;
+  }
+  function addTyping() {
+    const w = document.createElement('div');
+    w.className = 'msg assistant'; w.id = 'typing-indicator';
+    w.innerHTML = '<div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
+    chatEl.appendChild(w);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+  function removeTyping() { const t = document.getElementById('typing-indicator'); if (t) t.remove(); }
+
+  function addMeta(wrap, usage) {
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    meta.innerHTML = `<span class="tag tag-i">in ${usage.input_tokens.toLocaleString()}</span><span class="tag tag-o">out ${usage.output_tokens.toLocaleString()}</span>`;
+    wrap.appendChild(meta);
+  }
+
+  async function sendMessage() {
+    const apiKey = document.getElementById('api-key').value.trim();
+    const text   = promptEl.value.trim();
+    if (!apiKey) { showError('Paste your Anthropic API key first.'); return; }
+    if (!text)   return;
+
+    sendBtn.disabled = true;
+    promptEl.value   = '';
+    promptEl.style.height = 'auto';
+
+    addBubble('user', text);
+    history.push({ role: 'user', content: text });
+    addTyping();
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: currentModel(),
+          max_tokens: 1024,
+          messages: history
+        })
+      });
+
+      const data = await res.json();
+      removeTyping();
+
+      if (!res.ok) {
+        showError(`API error ${res.status}: ${data?.error?.message || 'unknown'}`);
+        history.pop();
+        return;
+      }
+
+      const reply = data.content.map(b => b.text || '').join('');
+      const usage = data.usage;
+      history.push({ role: 'assistant', content: reply });
+      totalInput  += usage.input_tokens;
+      totalOutput += usage.output_tokens;
+
+      const wrap = addBubble('assistant', reply);
+      addMeta(wrap, usage);
+      turns++;
+      document.getElementById('summarise-btn').disabled = false;
+      updateGauge();
+
+    } catch (err) {
+      removeTyping();
+      showError('Network error: ' + err.message);
+      history.pop();
+    } finally {
+      sendBtn.disabled = false;
+      promptEl.focus();
+    }
+  }
+
+  function clearSession() {
+    history.length = 0;
+    totalInput = 0; totalOutput = 0; turns = 0;
+    chatEl.innerHTML = '';
+    chatEl.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    errorBar.style.display = 'none';
+    document.getElementById('summarise-btn').disabled = true;
+    updateGauge();
+  }
+
+  // ── Summary modal ──────────────────────────────────────────────
+  let summaryText = '';
+
+  function closeModal() {
+    document.getElementById('summary-modal').classList.remove('open');
+  }
+
+  function copySummary() {
+    if (!summaryText) return;
+    navigator.clipboard.writeText(summaryText).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'Copied ✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  async function summariseChat() {
+    const apiKey = document.getElementById('api-key').value.trim();
+    if (!apiKey) { showError('Paste your API key first.'); return; }
+    if (history.length < 2) { showError('Nothing to summarise yet.'); return; }
+
+    summaryText = '';
+    const modal = document.getElementById('summary-modal');
+    const body  = document.getElementById('modal-body');
+    body.innerHTML = '<div class="summary-loading"><div class="typing"><span></span><span></span><span></span></div>Generating summary…</div>';
+    modal.classList.add('open');
+
+    const summariseMessages = [
+      ...history,
+      {
+        role: 'user',
+        content: `Please write a concise but complete summary of our conversation above. 
+The summary will be pasted at the start of a fresh chat to restore context, so:
+- Capture all key topics, decisions, code, and conclusions
+- Note any unresolved questions or next steps
+- Keep it under 400 words
+- Use plain text, no markdown headers
+- Start with: "CONVERSATION SUMMARY — paste this at the start of a new chat to restore context."`
+      }
+    ];
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: currentModel(),
+          max_tokens: 600,
+          messages: summariseMessages
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        body.innerHTML = `<p style="color:var(--danger)">Error: ${data?.error?.message || 'unknown'}</p>`;
+        return;
+      }
+
+      summaryText = data.content.map(b => b.text || '').join('');
+      body.innerHTML = `<p>${summaryText.replace(/</g, '&lt;')}</p>`;
+
+    } catch (err) {
+      body.innerHTML = `<p style="color:var(--danger)">Network error: ${err.message}</p>`;
+    }
+  }
+
+  // Close modal on backdrop click
+  document.getElementById('summary-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // Boot
+  updateGauge();
+</script>
+</body>
+</html>
