@@ -554,7 +554,8 @@
 </div>
 
 <div class="chat-header">
-  <input class="api-input" type="password" id="api-key" placeholder="sk-ant-… paste your API key" />
+  <input class="api-input" type="password" id="api-key" placeholder="sk-ant-… paste your API key" oninput="checkApiKey()" />
+  <span id="key-status" style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;white-space:nowrap;transition:all 0.3s;color:var(--muted)">○ no key</span>
   <div style="display:flex;gap:8px;">
     <button class="btn btn-summarise" id="summarise-btn" onclick="summariseChat()" disabled title="Summarise conversation so you can continue in a fresh chat">✦ Summarise</button>
     <button class="btn" onclick="clearSession()">↺ New Tank</button>
@@ -662,6 +663,21 @@
     'claude-opus-4-7':   { ctx: 1000000, warn: 0.65, danger: 0.85, inputPrice: 5.00, outputPrice: 25.00 },
   };
 
+  function checkApiKey() {
+    const key = document.getElementById('api-key').value.trim();
+    const status = document.getElementById('key-status');
+    if (key.startsWith('sk-ant')) {
+      status.textContent = '● live';
+      status.style.color = '#3b82f6';
+    } else if (key.length > 0) {
+      status.textContent = '● invalid';
+      status.style.color = '#ef4444';
+    } else {
+      status.textContent = '○ no key';
+      status.style.color = 'var(--muted)';
+    }
+  }
+
   const history = [];
   let totalInput = 0, totalOutput = 0, turns = 0;
 
@@ -675,12 +691,12 @@
     const fillPct = Math.max(0, 1 - usedPct);
     const cfg = MODELS[currentModel()];
 
-    // Color based on depletion
+    // Color based on depletion — use actual hex values not CSS vars
     let color;
-    if (usedPct < cfg.warn)       color = 'var(--full)';
-    else if (usedPct < cfg.danger) color = 'var(--warn)';
-    else if (usedPct < 0.95)      color = 'var(--danger)';
-    else                          color = 'var(--critical)';
+    if (usedPct < cfg.warn)        color = '#22c55e'; // green
+    else if (usedPct < cfg.danger) color = '#f59e0b'; // amber
+    else if (usedPct < 0.95)       color = '#ef4444'; // red
+    else                           color = '#dc2626'; // critical red
 
     // Tank fill
     const fill = document.getElementById('tank-fill');
