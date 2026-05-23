@@ -693,7 +693,7 @@
 
     // Color based on depletion — use actual hex values not CSS vars
     let color;
-    if (usedPct < cfg.warn)        color = '#22c55e'; // green
+    if (usedPct < cfg.warn)        color = '#3b82f6'; // blue
     else if (usedPct < cfg.danger) color = '#f59e0b'; // amber
     else if (usedPct < 0.95)       color = '#ef4444'; // red
     else                           color = '#dc2626'; // critical red
@@ -829,7 +829,7 @@
         },
         body: JSON.stringify({
           model: currentModel(),
-          max_tokens: 1024,
+          max_tokens: 8000,
           messages: history
         })
       });
@@ -929,7 +929,7 @@ The summary will be pasted at the start of a fresh chat to restore context, so:
         },
         body: JSON.stringify({
           model: currentModel(),
-          max_tokens: 600,
+          max_tokens: 1500,
           messages: summariseMessages
         })
       });
